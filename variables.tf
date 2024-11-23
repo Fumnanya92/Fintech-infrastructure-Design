@@ -45,3 +45,31 @@ variable "availability_zone_2" {
   type        = string
   default     = "us-west-2b"
 }
+
+variable "allowed_cidr_blocks" {
+  description = "CIDR blocks allowed to access EFS"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "db_name" {
+  description = "The name of the database"
+  type        = string
+}
+
+variable "db_username" {
+  description = "The master username for the RDS instance"
+  type        = string
+
+}
+
+variable "db_password" {
+  description = "The master password for the RDS instance"
+  type        = string
+  sensitive   = true
+}
+
+variable "key_name" {
+  description = "The name of the SSH key pair"
+  type        = string
+}

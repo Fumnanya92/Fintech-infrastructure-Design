@@ -19,7 +19,7 @@ output "public_subnet_2_id" {
     value = aws_subnet.public_subnet_2.id
 }
 
-# In modules/vpc/outputs.tf
+
 output "public_subnet_ids" {
   description = "List of public subnet IDs"
   value       = [aws_subnet.public_subnet_1.id, aws_subnet.public_subnet_2.id]
