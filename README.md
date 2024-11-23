@@ -318,9 +318,208 @@ terraform destroy
 3. **Database Connections**: Link the application to the RDS instance for data storage.
 4. **Monitoring & Logging**: Set up CloudWatch logs and metrics for monitoring.
 
+Let's create the configuration for the **EC2 Instances and Auto Scaling Group**. The steps include setting up the **Launch Template**, **Auto Scaling Group**, and **user data scripts** to initialize the instances for the fintech application. Here's how the setup will look:
+
+---
+
+### **Modules Structure**
+- We'll add these files to the `modules/ec2/` directory:
+  - `main.tf`: Define resources like `aws_launch_template` and `aws_autoscaling_group`.
+  - `variables.tf`: Variables for instance type, AMI, key pair, and scaling configuration.
+  - `outputs.tf`: Outputs for instance IDs and other relevant information.
+
+---
+
+### **Terraform Configuration**
+#### `modules/ec2/main.tf`
+```hcl
+# Generate SSH Key Pair for EC2
+resource "tls_private_key" "fintech" {
+    algorithm = "RSA"
+      rsa_bits  = 2048
+}
+
+resource "aws_key_pair" "fintech_keypair" {
+    key_name   = var.key_name  # Use variable instead of hardcoded name
+    public_key = tls_private_key.fintech.public_key_openssh
+}
+
+# Save the private key locally
+resource "local_file" "techkey" {
+    content  = tls_private_key.fintech.private_key_pem
+    filename = "${var.key_name}.pem"  # Save the private key with dynamic filename
+}
+
+# Create Elastic IP for the instance (optional for public access)
+resource "aws_eip" "fintech_eip" {
+    domain = "vpc"  # Specifies that this is for use in a VPC
+}
 
 
-Here’s a detailed documentation of your steps for setting up the RDS module in Terraform:
+# EC2 Instance Configuration
+resource "aws_instance" "fintech_instance" {
+    ami                         = "ami-066a7fbea5161f451"  # Replace with appropriate AMI ID
+    instance_type               = "t3.micro"
+    key_name                    = aws_key_pair.fintech_keypair.key_name
+    vpc_security_group_ids      = [var.security_group_id]
+    subnet_id                   = var.subnet_id           # Use the passed subnet ID
+    associate_public_ip_address = true                           # Associates a public IP
+
+    # User data for EC2 instance configuration (e.g., EFS mounting)
+    user_data = templatefile("${path.module}/userdata.sh", {efs_id = var.efs_id })
+
+    tags = {
+        Name = "fintech-instance"
+     }
+}
+
+# Associate Elastic IP with the instance (optional for dedicated IP)
+resource "aws_eip_association" "fintech_eip_association" {
+    instance_id   = aws_instance.fintech_instance.id
+      allocation_id = aws_eip.fintech_eip.id
+}
+
+```
+
+---
+
+#### `modules/ec2/variables.tf`
+```hcl
+#variable "subnet_ids" {
+ # description = "The subnet IDs where the EC2 instance should be launched"
+  #type        = list(string)  # Make sure it's a list of strings, not a single string
+#}
+
+
+variable "vpc_id" {
+  description = "VPC ID where the EC2 instance will be launched."
+  type        = string
+}
+
+variable "efs_id" {
+  description = "The EFS ID to mount on EC2."
+  type        = string
+}
+
+variable "db_endpoint" {
+  description = "The RDS DB endpoint to connect to."
+  type        = string
+}
+
+variable "security_group_id" {
+  description = "Security group ID to attach to resources"
+  type        = string
+}
+
+# ec2/variables.tf
+variable "subnet_id" {
+    description = "Subnet ID to launch the instance in"
+      type        = string
+}
+
+variable "fintech_tg_arn" {
+  description = "ARN of the target group for fintech instances"
+  type        = string
+}
+
+variable "public_subnets" {
+  description = "List of public subnet IDs for Auto Scaling Group"
+  type        = list(string)
+}
+
+variable "key_name" {
+  description = "Name of the SSH key pair"
+  type        = string
+}
+```
+
+---
+
+#### `modules/ec2/outputs.tf`
+```hcl
+output "launch_template_id" {
+  value = aws_launch_template.fintech_app_lt.id
+}
+
+output "autoscaling_group_name" {
+  value = aws_autoscaling_group.fintech_asg.name
+}
+```
+
+---
+
+#### `modules/ec2/userdata.sh`
+```bash
+#!/bin/bash
+# Update packages
+yum update -y
+
+# Install necessary packages for EFS mounting
+yum install -y amazon-efs-utils nfs-utils
+
+# Create a directory to mount EFS
+mkdir -p /var/www/html
+
+# Mount EFS using the file system ID from Terraform
+mount -t efs ${efs_id}:/ /var/www/html
+
+# Make the mount persistent on reboot
+echo "${efs_id}:/ /var/www/html efs defaults,_netdev 0 0" >> /etc/fstab
+
+# Install Apache and PHP (if required for WordPress)
+yum install -y httpd php
+
+# Start and enable Apache on boot
+systemctl start httpd
+systemctl enable httpd
+
+yum install -y docker
+service docker start
+usermod -a -G docker ec2-user
+
+sudo rpm -Uvh https://dev.mysql.com/get/mysql57-community-release-el7-11.noarch.rpm
+sudo rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2022
+sudo yum install mysql-community-server -y
+sudo systemctl enable mysqld
+sudo systemctl start mysqld
+
+# Pull and run the fintech application container
+docker pull <YOUR_DOCKER_IMAGE>
+docker run -d -p 80:80 <YOUR_DOCKER_IMAGE>
+```
+
+---
+
+### **Include the Module in the Root `main.tf`**
+```hcl
+# EC2 Module Configuration
+module "ec2" {
+  source            = "./modules/ec2"
+  key_name          = var.key_name
+  subnet_id         = module.vpc.public_subnet_1_id # Use public subnet 1 for EC2
+  vpc_id            = module.vpc.vpc_id
+  efs_id            = module.efs.efs_id
+  db_endpoint       = module.rds.rds_endpoint
+  security_group_id = aws_security_group.fintech_sg.id # Passing SG to module
+  fintech_tg_arn    = module.alb.fintech_tg_arn        # Pass the target group ARN
+  public_subnets    = module.vpc.public_subnet_ids     # Pass subnets here
+}
+
+```
+
+---
+
+### **Next Steps**
+1. Update your `terraform.tfvars` file with:
+   - AMI ID
+   - Key pair name
+2. Apply the configuration:
+   ```bash
+   terraform init
+   terraform plan
+   terraform apply
+   ```
+3. Confirm the instances are created and scaled as per your configuration.
 
 ---
 
