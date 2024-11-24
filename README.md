@@ -707,5 +707,101 @@ Once everything is configured, run the following Terraform commands to apply the
 Once the `terraform apply` completes successfully, verify that the RDS instance is correctly deployed. Check the output `rds_endpoint` to get the endpoint for the database connection.
 
 -
+---
+# Step 3: Implement PCI DSS Compliance
+
+## **1. Encrypting Data at Rest**
+### **Objective:**
+Ensure that sensitive data stored in databases and file systems is encrypted to comply with PCI DSS requirements.
+
+### **Actions Taken:**
+#### **Amazon RDS Encryption**
+- **Updated RDS Resource Configuration:**
+  - Enabled encryption at rest for the Amazon RDS instance using AWS Key Management Service (KMS).
+  - Configured `storage_encrypted = true` in the Terraform RDS resource.
+  - Created and associated a KMS key specifically for RDS encryption.
+
+#### **Amazon EFS Encryption**
+- **Updated EFS Resource Configuration:**
+  - Enabled encryption at rest for the Elastic File System (EFS).
+  - Configured `encrypted = true` in the Terraform EFS resource.
+  - Created and associated a KMS key specifically for EFS encryption.
+
+### **Terraform Code Implemented:**
+#### **RDS Resource**
+```hcl
+resource "aws_db_instance" "fintech_rds" {
+  allocated_storage      = var.allocated_storage
+  engine                 = "mysql"
+  engine_version         = var.engine_version
+  instance_class         = var.instance_class
+  db_name                = var.db_name
+  username               = var.db_username
+  password               = var.db_password
+  parameter_group_name   = "default.mysql8.0"
+  skip_final_snapshot    = true
+  publicly_accessible    = false
+
+  # Enable encryption at rest
+  storage_encrypted      = true
+  kms_key_id             = aws_kms_key.rds_kms_key.arn
+
+  # Attach the security group and subnet group
+  vpc_security_group_ids = [var.security_group_id]
+  db_subnet_group_name   = aws_db_subnet_group.rds_subnet.name
+}
+
+resource "aws_kms_key" "rds_kms_key" {
+  description             = "KMS key for encrypting RDS instance"
+  deletion_window_in_days = 7
+}
+
+resource "aws_db_subnet_group" "rds_subnet" {
+  name        = "rds-subnet-group"
+  description = "Subnet group for RDS instance"
+  subnet_ids  = var.private_subnet_ids
+}
+```
+
+#### **EFS Resource**
+```hcl
+# EFS file system with encryption at rest
+resource "aws_efs_file_system" "efs" {
+  encrypted    = true
+  kms_key_id   = aws_kms_key.efs_kms_key.arn
+
+  lifecycle_policy {
+    transition_to_ia = "AFTER_30_DAYS"
+  }
+
+  tags = {
+    Name = "fintech-efs"
+  }
+}
+
+# KMS key for EFS encryption
+resource "aws_kms_key" "efs_kms_key" {
+  description             = "KMS key for encrypting EFS file system"
+  deletion_window_in_days = 7
+}
+
+# EFS Mount Target for each private subnet
+resource "aws_efs_mount_target" "efs_mount_target" {
+  count            = length(var.subnet_ids)
+  file_system_id   = aws_efs_file_system.efs.id
+  subnet_id        = var.subnet_ids[count.index]
+  security_groups  = [var.security_group_id]
+}
+```
+
+### **Results:**
+- Data stored in RDS and EFS is now encrypted at rest using AWS KMS.
+- Verified encryption settings in the AWS Management Console and CLI.
+
+### **Next Steps:**
+- Move to the next action under Step 3: Encrypting Data in Transit or proceed with other PCI DSS requirements as planned.
+
+---
+
 
 
