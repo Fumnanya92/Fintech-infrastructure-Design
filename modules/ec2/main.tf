@@ -43,3 +43,88 @@ resource "aws_eip_association" "fintech_eip_association" {
     instance_id   = aws_instance.fintech_instance.id
       allocation_id = aws_eip.fintech_eip.id
 }
+
+
+##########################
+# IAM Roles and Policies
+##########################
+
+# EC2 IAM Role
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2-fintech-role"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+
+  tags = {
+    Environment = "Production"
+    Project     = "FinTech-Infrastructure"
+  }
+}
+
+# EC2 IAM Policy
+resource "aws_iam_policy" "ec2_policy" {
+  name        = "ec2-fintech-policy"
+  description = "Policy for EC2 to access S3, RDS, EFS, and CloudWatch"
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::${var.s3_bucket_name}",
+        "arn:aws:s3:::${var.s3_bucket_name}/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds:*",
+        "logs:*",
+        "cloudwatch:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "elasticfilesystem:*"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+}
+
+# Attach Policy to EC2 Role
+resource "aws_iam_role_policy_attachment" "ec2_role_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+}
+
+# Instance Profile for EC2
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "ec2-fintech-instance-profile"
+  role = aws_iam_role.ec2_role.name
+}

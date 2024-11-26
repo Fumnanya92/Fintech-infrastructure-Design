@@ -29,3 +29,25 @@ resource "aws_db_subnet_group" "rds_subnet" {
   description = "Subnet group for RDS instance"
   subnet_ids  = var.private_subnet_ids
 }
+
+resource "aws_iam_policy" "ec2_rds_access" {
+  name        = "EC2-RDS-Access-Policy"
+  description = "Allows EC2 instances to access RDS"
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action   = "rds:DescribeDBInstances"
+        Effect   = "Allow"
+        Resource = "*"
+      },
+      {
+        Action   = "rds:Connect"
+        Effect   = "Allow"
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+

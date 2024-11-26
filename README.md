@@ -798,8 +798,244 @@ resource "aws_efs_mount_target" "efs_mount_target" {
 - Data stored in RDS and EFS is now encrypted at rest using AWS KMS.
 - Verified encryption settings in the AWS Management Console and CLI.
 
-### **Next Steps:**
-- Move to the next action under Step 3: Encrypting Data in Transit or proceed with other PCI DSS requirements as planned.
+---
+
+## Phase 2: IAM Roles and Access Control
+
+## Overview
+In this phase, we configure AWS Identity and Access Management (IAM) roles, users, and policies to secure and control access to AWS resources. This includes creating IAM users, roles, and attaching the necessary policies to ensure that only authorized entities can access and manage the infrastructure components.
+
+## Objectives
+- **Create IAM Users** for specific tasks such as accessing S3 buckets or managing EC2 instances.
+- **Attach Policies to IAM Users and Roles** to define permissions and security boundaries.
+- **Control S3 Bucket Access** by limiting access to specific IAM users.
+
+## Key Components
+1. **IAM User for S3 Access**:  
+   Create an IAM user with permissions to access specific S3 buckets for secure file management.
+
+2. **IAM Role for EC2**:  
+   Create an IAM role to be used by EC2 instances to interact with other AWS services like ECS, RDS, etc.
+
+3. **IAM Policy Attachments**:  
+   Attach appropriate IAM policies to the users and roles to enforce the principle of least privilege.
+
+---
+
+## Steps
+
+### Step 1: Create IAM User
+
+1. **Create an IAM User** for S3 bucket access:
+   - The user will be granted permissions to read and write to the designated S3 bucket.
+   - IAM user creation is handled in `main.tf` using the `aws_iam_user` resource.
+
+   ```hcl
+   resource "aws_iam_user" "fintech_user" {
+     name = "fintech-user"
+
+     tags = {
+       Name        = "fintech-user"
+       Environment = var.environment
+       Project     = var.project_name
+     }
+   }
+   ```
+
+2. **Attach a Policy** to the IAM user:
+   - The `AmazonS3FullAccess` policy is attached to the user to grant full access to S3 resources.
+
+   ```hcl
+   resource "aws_iam_user_policy_attachment" "fintech_user_s3_access" {
+     user       = aws_iam_user.fintech_user.name
+     policy_arn = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+   }
+   ```
+
+---
+
+### Step 2: Update S3 Bucket Policy
+
+1. **Modify the S3 bucket policy** to allow access for the created IAM user.
+   - The policy grants the IAM user permission to perform actions like `s3:GetObject`, `s3:PutObject`, and `s3:ListBucket`.
+
+   ```hcl
+   resource "aws_s3_bucket_policy" "fintech_bucket_policy" {
+     bucket = module.s3.s3_bucket_name
+
+     policy = <<EOF
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Action": [
+           "s3:GetObject",
+           "s3:PutObject",
+           "s3:ListBucket"
+         ],
+         "Principal": {
+           "AWS": "${aws_iam_user.fintech_user.arn}"
+         },
+         "Resource": [
+           "arn:aws:s3:::${module.s3.s3_bucket_name}",
+           "arn:aws:s3:::${module.s3.s3_bucket_name}/*"
+         ]
+       }
+     ]
+   }
+   EOF
+   }
+   ```
+
+   - This policy restricts access to the specific IAM user (`fintech-user`) and ensures that only authorized entities can interact with the S3 bucket.
+
+---
+
+### Step 3: Create IAM Role for EC2 Access
+
+1. **Create an IAM Role** for EC2 instances to interact with AWS services:
+   - This role will be assumed by EC2 instances to interact with other services, like ECS.
+
+   ```hcl
+   resource "aws_iam_role" "ec2_role" {
+     name = "ec2-fintech-role"
+
+     assume_role_policy = <<EOF
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Action": "sts:AssumeRole",
+         "Principal": {
+           "Service": "ec2.amazonaws.com"
+         },
+         "Effect": "Allow"
+       }
+     ]
+   }
+   EOF
+   }
+
+   ```
+
+2. **Attach Policies to the IAM Role**:
+   - Policies such as `AmazonEC2FullAccess` can be attached to this role to allow EC2 instances to perform necessary actions on the infrastructure.
+
+   ```hcl
+  
+resource "aws_iam_role_policy_attachment" "ec2_role_policy_attachment" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+}
+   ```
+
+---
+
+### Step 4: (Optional) Additional IAM Role for ALB Access
+
+1. **Create an IAM Role for Application Load Balancer (ALB)**:
+   - If required, an IAM role can be created for the ALB to allow it to interact with other AWS services.
+
+   ```hcl
+   resource "aws_iam_role" "alb_role" {
+     name = "alb-fintech-role"
+
+     assume_role_policy = <<EOF
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Action": "sts:AssumeRole",
+         "Principal": {
+           "Service": "elasticloadbalancing.amazonaws.com"
+         },
+         "Effect": "Allow"
+       }
+     ]
+   }
+   EOF
+   }
+   ```
+
+## Summary
+Phase 2 of the project focused on securing access to AWS resources by creating IAM users and roles and assigning appropriate permissions. The key steps involved:
+- Creating IAM users with access to S3 resources.
+- Attaching policies to the users and roles to grant the necessary permissions.
+- Updating S3 bucket policies to restrict access to specific IAM users.
+
+
+4. **Enable MFA for Users**
+   - **Enforce MFA**: Ensure that all users accessing AWS resources via IAM have Multi-Factor Authentication (MFA) enabled for added security.
+
+5. **Tag IAM Resources**
+   - **Tagging**: Assign tags to IAM resources (roles, policies, users, etc.) for better visibility and management. Example tags:
+     ```hcl
+     tags = {
+       "Environment" = "Production"
+       "Project"     = "FinTech-Infrastructure"
+     }
+     ```
+
+6. **Audit IAM Permissions**
+   - **Review permissions**: Use **AWS IAM Access Analyzer** or **AWS Trusted Advisor** to regularly review and refine IAM permissions. This will help identify over-permissioned resources and improve security posture.
+
+---
+
+### Detailed Steps for IAM Role Setup and MFA Enforcement
+
+#### 1. **Creating the `AdminGroup` IAM Group**
+
+To create a new IAM group for enforcing MFA, add the following resource to your Terraform configuration:
+
+```hcl
+resource "aws_iam_group" "admin_group" {
+  name = "AdminGroup"
+
+  tags = {
+    Environment = "Production"
+    Project     = "FinTech-Infrastructure"
+  }
+}
+```
+
+This creates a new group named `AdminGroup` with the specified tags.
+
+#### 2. **Attaching the MFA Enforcement Policy**
+
+Attach the MFA enforcement policy to the newly created `AdminGroup` (or an existing group) using the following configuration. Here’s an example of attaching the policy to the newly created group:
+
+```hcl
+resource "aws_iam_group_policy_attachment" "mfa_enforcement_attachment" {
+  group      = aws_iam_group.admin_group.name  # Reference the created group
+  policy_arn = aws_iam_policy.mfa_enforcement.arn
+}
+```
+
+Alternatively, if you're using an existing group like `Admins`, modify the configuration like so:
+
+```hcl
+resource "aws_iam_group_policy_attachment" "mfa_enforcement_attachment" {
+  group      = "Admins"  # Use the name of your existing IAM group
+  policy_arn = aws_iam_policy.mfa_enforcement.arn
+}
+```
+
+#### 3. **Creating IAM Policies for Services**
+
+- **EC2 Instance Role Policy**: Create policies allowing EC2 instances to interact with other services like S3, EFS, and RDS.
+- **RDS Access Policy**: Create policies to allow the necessary applications to connect to RDS.
+- **CloudWatch Logging Policy**: Set up policies that grant logging permissions to CloudWatch for monitoring purposes.
+
+#### 4. **Regular IAM Audits**
+
+Use **IAM Access Analyzer** and **Trusted Advisor** to audit and refine IAM roles and policies periodically. This ensures that users and services only have the permissions they need, improving overall security.
+
+---
+
+### Conclusion
+
+Implementing **IAM roles and policies** is a crucial step for securing the AWS infrastructure and maintaining compliance with **PCI DSS**. By ensuring **least privilege access**, using **MFA** for users, and regularly auditing IAM resources, the security and scalability of the infrastructure are enhanced.
 
 ---
 

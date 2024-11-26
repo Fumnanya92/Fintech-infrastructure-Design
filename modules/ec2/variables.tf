@@ -44,3 +44,14 @@ variable "key_name" {
   description = "Name of the SSH key pair"
   type        = string
 }
+
+variable "allocate_eip" {
+  description = "Flag to allocate Elastic IP"
+  type        = bool
+  default     = true
+}
+
+variable "s3_bucket_name" {
+  description = "The name of the S3 bucket"
+  type        = string
+}

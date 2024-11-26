@@ -79,6 +79,7 @@ module "ec2" {
   security_group_id = aws_security_group.fintech_sg.id # Passing SG to module
   fintech_tg_arn    = module.alb.fintech_tg_arn        # Pass the target group ARN
   public_subnets    = module.vpc.public_subnet_ids     # Pass subnets here
+  s3_bucket_name    = var.s3_bucket_name
 }
 
 # EFS Module Configuration
@@ -111,3 +112,17 @@ module "rds" {
   private_subnet_ids  = module.vpc.private_subnet_ids
   security_group_id   = aws_security_group.fintech_sg.id
 }
+
+module "s3" {
+  source         = "./modules/s3"
+  s3_bucket_name = var.s3_bucket_name
+  environment    = var.environment
+  project_name   = var.project_name
+  aws_region     = var.aws_region
+  iam_group_name = var.iam_group_name
+  iam_user_name  = var.iam_user_name
+}
+
+
+
+data "aws_caller_identity" "current" {}

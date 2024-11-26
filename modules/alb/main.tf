@@ -71,3 +71,37 @@ resource "aws_lb_listener" "http_listener" {
     target_group_arn = aws_lb_target_group.fintech_tg.arn
   }
 }
+
+##########################
+# ALB IAM Role (Optional)
+##########################
+resource "aws_iam_role" "alb_role" {
+  name = "alb-fintech-role"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "elasticloadbalancing.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+
+  tags = {
+    Environment = "Production"
+    Project     = "FinTech-Infrastructure"
+  }
+}
+
+# Attach AWS Managed Policy for ALB Access
+resource "aws_iam_role_policy_attachment" "alb_role_policy_attachment" {
+  role       = aws_iam_role.alb_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
+}
